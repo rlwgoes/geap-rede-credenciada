@@ -75,11 +75,18 @@ module.exports = async (req, res) => {
     res.status(400).json({ error: "Parâmetros inválidos" });
     return;
   }
+  const t0 = Date.now();
   try {
     const tipos = await Promise.all(TIPOS.map((t) => tipoCompleto({ uf, cidade, plano }, t)));
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     // CDN da Vercel guarda 12h e serve versão antiga por até 7 dias enquanto atualiza.
     res.setHeader("Cache-Control", "public, s-maxage=43200, stale-while-revalidate=604800");
+    if (q.resumo === "1") {
+      // Diagnóstico: só contagens e tempo, sem cache
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json({ ms: Date.now() - t0, tipos: tipos.map((t) => ({ tipo: t.tipo, total: t.total, n: t.itens.length })) });
+      return;
+    }
     res.status(200).json({ consultadoEm: new Date().toISOString(), uf, cidade, plano, tipos });
   } catch (e) {
     res.status(502).json({ error: "Falha ao consultar a API da GEAP", detail: String(e) });

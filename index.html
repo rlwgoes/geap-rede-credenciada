@@ -15,7 +15,7 @@
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--fundo);color:var(--txt)}
   header{background:linear-gradient(120deg,var(--azul),var(--azul2));color:#fff;padding:22px 20px}
   header h1{margin:0;font-size:1.35rem} header p{margin:4px 0 0;opacity:.85;font-size:.9rem}
-  main{max-width:1400px;margin:0 auto;padding:18px}
+  main{min-width:0;padding:18px}
   .card{background:#fff;border:1px solid var(--borda);border-radius:12px;padding:16px;margin-bottom:16px}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
   label{font-size:.8rem;color:var(--mut);display:block;margin-bottom:4px}
@@ -52,15 +52,50 @@
   .leaflet-popup-content h4{margin:0 0 4px;color:var(--azul);font-size:.9rem}
   .esqueleto{height:150px;border-radius:10px;background:linear-gradient(90deg,#eef2f8 25%,#f7f9fc 50%,#eef2f8 75%);background-size:200% 100%;animation:sk 1.2s infinite}
   @keyframes sk{to{background-position:-200% 0}}
+  /* Layout: menu lateral no desktop, hambúrguer no mobile */
+  header{display:flex;align-items:center;gap:14px}
+  header .tit{flex:1;min-width:0}
+  #ham{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.5);padding:8px 11px;font-size:1.3rem;line-height:1}
+  .layout{display:grid;grid-template-columns:290px 1fr;max-width:1600px;margin:0 auto;align-items:start}
+  aside{position:sticky;top:0;padding:18px 0 18px 18px}
+  aside .card{margin:0}
+  aside .grid{grid-template-columns:1fr}
+  aside .acoes button{flex:1}
+  #fechar{display:none}
+  #veu{display:none}
+  @media (max-width:900px){
+    #ham{display:block}
+    .layout{display:block}
+    aside{position:fixed;z-index:1000;top:0;left:0;bottom:0;width:min(86vw,320px);padding:14px;background:var(--fundo);overflow:auto;transform:translateX(-105%);transition:transform .25s;box-shadow:2px 0 14px rgba(0,0,0,.25)}
+    body.menu aside{transform:none}
+    body.menu #veu{display:block;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.4)}
+    #fechar{display:block;margin-left:auto;margin-bottom:8px;background:none;color:var(--txt);font-size:1.4rem;padding:2px 8px}
+  }
+  /* Sinal de carregamento */
+  #topo{position:fixed;left:0;top:0;height:4px;width:0;background:#2fb36b;z-index:2000;transition:width .4s;box-shadow:0 0 8px #2fb36b}
+  .carga{display:flex;gap:14px;align-items:center;background:#fff7e0;border:2px solid #f0b429;border-radius:12px;padding:16px;margin-bottom:14px}
+  .carga.ok{background:#e6f6ec;border-color:#2fb36b}
+  .carga.erro{background:#fdeaea;border-color:#d64545}
+  .spin{width:34px;height:34px;border:4px solid #f0d58a;border-top-color:#b7791f;border-radius:50%;animation:gira .8s linear infinite;flex:none}
+  @keyframes gira{to{transform:rotate(360deg)}}
+  .carga b{display:block;font-size:1rem}
+  .carga small{color:var(--mut)}
+  .prog{height:8px;border-radius:99px;background:#f0e2b6;margin-top:8px;overflow:hidden}
+  .prog i{display:block;height:100%;width:5%;background:#b7791f;transition:width .5s}
   footer{text-align:center;font-size:.78rem;color:var(--mut);padding:20px}
 </style>
 </head>
 <body>
+<div id="topo"></div>
 <header>
-  <h1>Rede Credenciada GEAP</h1>
-  <p>Todos os estabelecimentos, separados por tipo, em lista ou no mapa. Exporta para Excel.</p>
+  <button id="ham" aria-label="Abrir consulta">☰</button>
+  <div class="tit"><h1>Rede Credenciada GEAP</h1>
+  <p>Todos os estabelecimentos, separados por tipo, em lista ou no mapa. Exporta para Excel.</p></div>
 </header>
-<main>
+<div id="veu"></div>
+<div class="layout">
+<aside id="menu">
+  <button id="fechar" aria-label="Fechar">✕</button>
   <section class="card">
     <div class="grid">
       <div><label for="uf">UF</label><input id="uf" value="SC" maxlength="2"></div>
@@ -73,8 +108,10 @@
       <span id="status">Padrão: Florianópolis/SC, plano GEAP Para Você SC (15).</span>
     </div>
   </section>
-
+</aside>
+<main>
   <section class="card" id="res">
+    <div id="carga" hidden></div>
     <div class="barra">
       <input id="busca" placeholder="Filtrar por nome, bairro, especialidade, médico…">
       <div class="modo"><button id="vLista" class="ativo">Lista</button><button id="vMapa">Mapa</button></div>
@@ -84,6 +121,7 @@
     <div id="mapa" hidden></div>
   </section>
 </main>
+</div>
 <footer>Dados da API pública apicore.geap.com.br · Mapa © colaboradores do OpenStreetMap · Página não oficial.</footer>
 
 <script>
@@ -103,6 +141,24 @@ const chave = p => `geap:${p.uf}:${p.cidade}:${p.plano}`;
 function lerCache(p){ try{ const c=JSON.parse(localStorage.getItem(chave(p))); if(c && Date.now()-c.t < CACHE_H*3600e3) return c.d; }catch(e){} return null; }
 function gravarCache(p,d){ try{ localStorage.setItem(chave(p), JSON.stringify({t:Date.now(),d})); }catch(e){} }
 
+let tmr=null;
+function cargaIni(){
+  const t0=Date.now(), el=$("carga"); el.hidden=false;
+  el.className="carga";
+  el.innerHTML='<div class="spin"></div><div style="flex:1"><b>Consultando a GEAP… <span id="seg">0</span>s</b><small>A primeira consulta pode levar até ~30s. Depois fica instantâneo (guardado por 12h).</small><div class="prog"><i id="pb"></i></div></div>';
+  $("topo").style.width="8%";
+  clearInterval(tmr);
+  tmr=setInterval(()=>{ const s=(Date.now()-t0)/1000; $("seg").textContent=Math.floor(s);
+    const pct=Math.min(92, 8+84*(1-Math.exp(-s/14))); $("pb").style.width=pct+"%"; $("topo").style.width=pct+"%"; },500);
+}
+function cargaFim(ok,msg){
+  clearInterval(tmr); const el=$("carga");
+  el.className="carga "+(ok?"ok":"erro");
+  el.innerHTML=`<div style="font-size:1.8rem">${ok?"✅":"⚠️"}</div><div><b>${esc(msg)}</b></div>`;
+  $("topo").style.width=ok?"100%":"0";
+  setTimeout(()=>{ $("topo").style.width="0"; },700);
+  if(ok) setTimeout(()=>{ el.hidden=true; },4000);
+}
 function esqueleto(){
   $("lista").innerHTML = Array(6).fill('<div class="esqueleto"></div>').join("");
 }
@@ -114,13 +170,15 @@ async function consultar(forcar){
   $("btn").disabled = $("xlsx").disabled = true;
   $("status").textContent = "Consultando todos os tipos…";
   if (!dados) esqueleto();
+  cargaIni();
   try {
     const r = await fetch(`/api/rede?${new URLSearchParams(p)}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
-    gravarCache(p, d); usar(d);
+    gravarCache(p, d); usar(d); cargaFim(true, `Concluído: ${d.tipos.reduce((a,t)=>a+t.itens.length,0)} estabelecimentos carregados`);
   } catch (e) {
     $("status").textContent = "Erro na consulta: " + e.message;
+    cargaFim(false, "Erro na consulta: " + e.message + ". Tente de novo.");
     $("lista").innerHTML = "";
   } finally { $("btn").disabled = false; }
 }
@@ -207,7 +265,9 @@ function setModo(m, foco){
 $("vLista").onclick = () => setModo("lista");
 $("vMapa").onclick = () => setModo("mapa");
 $("busca").oninput = render;
-$("btn").onclick = () => consultar(true);
+$("btn").onclick = () => { document.body.classList.remove("menu"); consultar(true); };
+const menu = on => document.body.classList.toggle("menu", on);
+$("ham").onclick = () => menu(true); $("fechar").onclick = $("veu").onclick = () => menu(false);
 
 let xlsxPronto = null;
 function carregarXLSX(){

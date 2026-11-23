@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rede Credenciada GEAP — Consulta</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root{--azul:#0b3a75;--azul2:#1f5fae;--fundo:#f4f6fa;--borda:#dde3ec;--txt:#1d2533;--mut:#5d6b80}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--fundo);color:var(--txt)}
+  header{background:linear-gradient(120deg,var(--azul),var(--azul2));color:#fff;padding:22px 20px}
+  header h1{margin:0;font-size:1.35rem} header p{margin:4px 0 0;opacity:.85;font-size:.9rem}
+  main{max-width:1400px;margin:0 auto;padding:18px}
+  .card{background:#fff;border:1px solid var(--borda);border-radius:12px;padding:16px;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  label{font-size:.8rem;color:var(--mut);display:block;margin-bottom:4px}
+  input{width:100%;padding:9px 10px;border:1px solid var(--borda);border-radius:8px;font-size:.95rem}
+  .tipos{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .tipos label{display:flex;align-items:center;gap:6px;background:var(--fundo);border:1px solid var(--borda);border-radius:999px;padding:6px 12px;color:var(--txt);font-size:.85rem;cursor:pointer;margin:0}
+  .acoes{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
+  button{background:var(--azul);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:.95rem;cursor:pointer}
+  button.sec{background:#fff;color:var(--azul);border:1px solid var(--azul)}
+  button:disabled{opacity:.5;cursor:default}
+  #status{font-size:.88rem;color:var(--mut)}
+  .abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .aba{background:#fff;color:var(--txt);border:1px solid var(--borda);font-size:.85rem;padding:7px 12px}
+  .aba.ativa{background:var(--azul);color:#fff;border-color:var(--azul)}
+  .aba .n{opacity:.7;margin-left:4px}
+  .lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px}
+  .item{background:#fff;border:1px solid var(--borda);border-radius:10px;padding:14px;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+  .item h3{margin:0 0 2px;font-size:1rem;color:var(--azul)}
+  .item .sub{font-size:.8rem;color:var(--mut);margin-bottom:10px}
+  .campo{font-size:.85rem;margin:6px 0;line-height:1.4}
+  .campo b{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;color:var(--mut);font-weight:600}
+  .flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+  .flag{font-size:.72rem;padding:2px 8px;border-radius:999px;background:#eef2f8;color:var(--mut)}
+  .flag.sim{background:#e3eefc;color:var(--azul)}
+  .tag{display:inline-block;font-size:.72rem;padding:2px 7px;border-radius:999px;background:#e5f3ea;color:#1c6b3a;margin:2px 3px 2px 0}
+  details summary{cursor:pointer;color:var(--azul2)}
+  .vazio{padding:30px;text-align:center;color:var(--mut)}
+  #busca{max-width:320px}
+  footer{text-align:center;font-size:.78rem;color:var(--mut);padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Rede Credenciada GEAP</h1>
+  <p>Todos os estabelecimentos, sem paginação, separados por tipo. Exporta para Excel.</p>
+</header>
+<main>
+  <section class="card">
+    <div class="grid">
+      <div><label for="uf">UF</label><input id="uf" value="SC" maxlength="2"></div>
+      <div><label for="cidade">Nº da cidade (NroCidade)</label><input id="cidade" type="number" value="7438"></div>
+      <div><label for="plano">Nº do plano (NroPlano)</label><input id="plano" type="number" value="15"></div>
+    </div>
+    <div class="tipos" id="tipos"></div>
+    <div class="acoes">
+      <button id="btn">Consultar</button>
+      <button id="xlsx" class="sec" disabled>Baixar Excel</button>
+      <span id="status">Padrão: Florianópolis/SC, plano GEAP Para Você SC (15).</span>
+    </div>
+  </section>
+
+  <section class="card" id="res" hidden>
+    <div class="acoes" style="margin-top:0;margin-bottom:10px">
+      <input id="busca" placeholder="Filtrar por nome, bairro, especialidade…">
+    </div>
+    <div class="abas" id="abas"></div>
+    <div class="lista" id="tabela"></div>
+  </section>
+</main>
+<footer>Dados da API pública apicore.geap.com.br. Página não oficial.</footer>
+
+<script>
+const TIPOS = {
+  1:"Internação Hospitalar", 2:"Pronto Socorro", 3:"Serviço Diagnóstico/Exames",
+  4:"Consultórios/Clínicas Especializadas", 5:"Hospital com Atendimento Ambulatorial",
+  6:"Maternidade", 7:"Telemedicina", 8:"Tipo 8"
+};
+const $ = id => document.getElementById(id);
+let dados = {}, abaAtiva = null;
+
+$("tipos").innerHTML = Object.entries(TIPOS).map(([n,t]) =>
+  `<label><input type="checkbox" value="${n}" checked> ${n}. ${t}</label>`).join("");
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const sn = b => b ? "Sim" : "Não";
+
+async function pagina(tipo, page, p) {
+  const qs = new URLSearchParams({tipo, page, size:p.size, uf:p.uf, cidade:p.cidade, plano:p.plano});
+  const r = await fetch(`/api/geap?${qs}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  return j.resultData || {totalRecords:0,totalPages:0,items:[]};
+}
+
+function linha(i) {
+  const e = i.endereco || {}, p = i.propriedades || {};
+  const cc = (i.corpoClinico || []).map(c => (c.nmeCorpoClinico||"").trim());
+  return {
+    "Nome fantasia": (i.nmeFantasia||"").trim(), "Contratado": i.nmeContratado,
+    "Nº contratado": i.nroContratado, "CPF/CNPJ": i.nroCPFCNPJ,
+    "Classe": (i.desClasse||"").replace(/\s+/g," "), "Telefone": i.telefone,
+    "Logradouro": (e.logradouro||"").trim(), "Complemento": e.complemento, "Bairro": e.bairro,
+    "Cidade": e.nmeCidade, "UF": e.sglEstado, "CEP": String(e.nroCep||"").padStart(8,"0"),
+    "Latitude": e.nroLatitude, "Longitude": e.nroLongitude,
+    "Especialidades": (i.especialidades||[]).map(x=>x.esp).join("; "),
+    "Urgência/Emergência": sn(p.urgEmerg), "Hora marcada": sn(p.horaMarcada),
+    "Pronto atendimento": sn(p.prontoAtendimento), "Internação": sn(p.paInternado),
+    "Atend. pediátrico": sn(p.staAtendimentoPediatrico),
+    "Qtd. corpo clínico": cc.length, "Corpo clínico": cc.join("; ")
+  };
+}
+
+$("btn").onclick = async () => {
+  const p = {uf:$("uf").value.trim().toUpperCase(), cidade:$("cidade").value, plano:$("plano").value,
+             size:100};
+  const tipos = [...document.querySelectorAll("#tipos input:checked")].map(x => +x.value);
+  if (!tipos.length) { $("status").textContent = "Selecione ao menos um tipo."; return; }
+  $("btn").disabled = $("xlsx").disabled = true; dados = {};
+  try {
+    for (const t of tipos) {
+      $("status").textContent = `Consultando ${TIPOS[t]}…`;
+      const first = await pagina(t, 1, p);
+      let items = first.items || [];
+      for (let pg = 2; pg <= (first.totalPages || 1); pg++) {
+        items = items.concat((await pagina(t, pg, p)).items || []);
+      }
+      dados[t] = {total:first.totalRecords || 0, linhas: items.map(linha)};
+    }
+    const tot = Object.values(dados).reduce((a,d)=>a+d.linhas.length,0);
+    $("status").textContent = `${tot} estabelecimentos encontrados.`;
+    $("xlsx").disabled = false; $("res").hidden = false;
+    abaAtiva = tipos[0]; render();
+  } catch (e) {
+    $("status").textContent = "Erro na consulta: " + e.message;
+  } finally { $("btn").disabled = false; }
+};
+
+function render() {
+  $("abas").innerHTML = Object.keys(dados).map(t =>
+    `<button class="aba ${+t===abaAtiva?"ativa":""}" data-t="${t}">${esc(TIPOS[t])}<span class="n">(${dados[t].linhas.length})</span></button>`).join("");
+  document.querySelectorAll(".aba").forEach(b => b.onclick = () => { abaAtiva = +b.dataset.t; render(); });
+  const f = $("busca").value.trim().toLowerCase();
+  const rows = (dados[abaAtiva]?.linhas || []).filter(r => !f ||
+    [r["Nome fantasia"],r["Contratado"],r["Bairro"],r["Especialidades"],r["Corpo clínico"]].join(" ").toLowerCase().includes(f));
+  if (!rows.length) { $("tabela").innerHTML = `<div class="vazio">Nenhum registro.</div>`; return; }
+  const flag = (lbl,v) => `<span class="flag ${v==="Sim"?"sim":""}">${lbl}: ${v}</span>`;
+  $("tabela").innerHTML = rows.map(r => `<article class="item">
+    <h3>${esc(r["Nome fantasia"])}</h3>
+    <div class="sub">${esc(r["Classe"])} · CNPJ/CPF ${esc(r["CPF/CNPJ"])} · Nº ${esc(r["Nº contratado"])}</div>
+    ${r["Contratado"] && r["Contratado"].trim()!==r["Nome fantasia"] ? `<div class="campo"><b>Contratado</b>${esc(r["Contratado"])}</div>` : ""}
+    <div class="campo"><b>Telefone</b>${r["Telefone"] ? `<a href="tel:${esc(String(r["Telefone"]).replace(/\D/g,""))}">${esc(r["Telefone"])}</a>` : "—"}</div>
+    <div class="campo"><b>Endereço</b>${esc(r["Logradouro"])}${r["Complemento"] ? ", "+esc(r["Complemento"]) : ""}<br>${esc(r["Bairro"])} · ${esc(r["Cidade"])}/${esc(r["UF"])} · CEP ${esc(r["CEP"])}
+      ${r.Latitude ? ` · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${r.Latitude},${r.Longitude}">ver no mapa</a>` : ""}</div>
+    <div class="campo"><b>Especialidades</b>${r["Especialidades"] ? r["Especialidades"].split("; ").map(s=>`<span class="tag">${esc(s)}</span>`).join("") : "—"}</div>
+    <div class="flags">${flag("Urg/Emerg",r["Urgência/Emergência"])}${flag("Hora marcada",r["Hora marcada"])}${flag("Pronto atend.",r["Pronto atendimento"])}${flag("Internação",r["Internação"])}${flag("Pediátrico",r["Atend. pediátrico"])}</div>
+    <div class="campo">${r["Qtd. corpo clínico"] ? `<details><summary>Corpo clínico (${r["Qtd. corpo clínico"]})</summary>${esc(r["Corpo clínico"])}</details>` : ""}</div>
+  </article>`).join("");
+}
+$("busca").oninput = render;
+window.addEventListener("load", () => $("btn").click());
+
+$("xlsx").onclick = () => {
+  const wb = XLSX.utils.book_new();
+  const resumo = Object.entries(dados).map(([t,d]) => ({"Tipo":+t,"Estabelecimento":TIPOS[t],"Total API":d.total,"Registros":d.linhas.length}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumo), "Resumo");
+  for (const [t,d] of Object.entries(dados)) {
+    const nome = TIPOS[t].replace(/[\\\/\?\*\[\]:]/g,"-").slice(0,31);
+    const ws = d.linhas.length ? XLSX.utils.json_to_sheet(d.linhas.map(r => ({...r, "Corpo clínico": r["Corpo clínico"].slice(0,32000)})))
+                               : XLSX.utils.aoa_to_sheet([["Nenhum registro encontrado"]]);
+    XLSX.utils.book_append_sheet(wb, ws, nome);
+  }
+  XLSX.writeFile(wb, `GEAP_rede_${$("uf").value}_${$("cidade").value}_plano${$("plano").value}.xlsx`);
+};
+</script>
+</body>
+</html>

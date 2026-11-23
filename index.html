@@ -82,6 +82,15 @@
   .carga small{color:var(--mut)}
   .prog{height:8px;border-radius:99px;background:#f0e2b6;margin-top:8px;overflow:hidden}
   .prog i{display:block;height:100%;width:5%;background:#b7791f;transition:width .5s}
+  .fixa{padding:9px 10px;border:1px solid var(--borda);border-radius:8px;background:#eef2f8;font-weight:600;color:var(--azul)}
+  aside{max-height:100vh;overflow:auto}
+  aside .abas{flex-direction:column;margin:0}
+  aside .aba{text-align:left;width:100%;display:flex;justify-content:space-between;gap:8px}
+  #status{margin-top:10px}
+  .ver{display:none;width:100%;margin-top:12px}
+  #tituloTipo{margin:0 0 12px;font-size:1.1rem;color:var(--azul)}
+  #mapaNota{font-size:.82rem;color:var(--mut);margin-bottom:8px}
+  @media (max-width:900px){ .ver{display:block} }
   footer{text-align:center;font-size:.78rem;color:var(--mut);padding:20px}
 </style>
 </head>
@@ -97,26 +106,32 @@
 <aside id="menu">
   <button id="fechar" aria-label="Fechar">✕</button>
   <section class="card">
+    <input id="uf" type="hidden" value="SC"><input id="cidade" type="hidden" value="7438">
     <div class="grid">
-      <div><label for="uf">UF</label><input id="uf" value="SC" maxlength="2"></div>
-      <div><label for="cidade">Nº da cidade (NroCidade)</label><input id="cidade" type="number" value="7438"></div>
+      <div><label>Cidade</label><div class="fixa">📍 Florianópolis / SC</div></div>
       <div><label for="plano">Nº do plano (NroPlano)</label><input id="plano" type="number" value="15"></div>
     </div>
     <div class="acoes">
       <button id="btn">Consultar</button>
       <button id="xlsx" class="sec" disabled>Baixar Excel</button>
-      <span id="status">Padrão: Florianópolis/SC, plano GEAP Para Você SC (15).</span>
     </div>
+    <div id="status">Plano GEAP Para Você SC (15).</div>
+  </section>
+  <section class="card" id="filtros">
+    <label for="busca">Buscar</label>
+    <input id="busca" placeholder="Nome, bairro, especialidade, médico…">
+    <label style="margin-top:12px">Exibir como</label>
+    <div class="modo"><button id="vLista" class="ativo">Lista</button><button id="vMapa">Mapa</button></div>
+    <label style="margin-top:12px">Tipo de estabelecimento</label>
+    <div class="abas" id="abas"></div>
+    <button id="ver" class="ver">Ver resultados</button>
   </section>
 </aside>
 <main>
   <section class="card" id="res">
     <div id="carga" hidden></div>
-    <div class="barra">
-      <input id="busca" placeholder="Filtrar por nome, bairro, especialidade, médico…">
-      <div class="modo"><button id="vLista" class="ativo">Lista</button><button id="vMapa">Mapa</button></div>
-    </div>
-    <div class="abas" id="abas"></div>
+    <h2 id="tituloTipo"></h2>
+    <div id="mapaNota" hidden></div>
     <div class="lista" id="lista"></div>
     <div id="mapa" hidden></div>
   </section>
@@ -204,9 +219,10 @@ function render(){
   if (!dados) return;
   $("abas").innerHTML = Object.keys(TIPOS).map(t =>
     `<button class="aba ${+t===abaAtiva?"ativa":""}" data-t="${t}">${esc(TIPOS[t])}<span class="n">(${dados[t]?.itens.length ?? 0})</span></button>`).join("");
-  document.querySelectorAll(".aba").forEach(b => b.onclick = () => { abaAtiva = +b.dataset.t; render(); });
+  document.querySelectorAll(".aba").forEach(b => b.onclick = () => { abaAtiva = +b.dataset.t; render(); menu(false); window.scrollTo({top:0}); });
   const rows = filtrados();
-  $("lista").hidden = modo !== "lista"; $("mapa").hidden = modo !== "mapa";
+  $("tituloTipo").textContent = `${TIPOS[abaAtiva]} — ${rows.length} resultado${rows.length===1?"":"s"}`;
+  $("lista").hidden = modo !== "lista"; $("mapa").hidden = modo !== "mapa"; if (modo !== "mapa") $("mapaNota").hidden = true;
   if (modo === "mapa") return renderMapa(rows);
   if (!rows.length) { $("lista").innerHTML = `<div class="vazio">Nenhum registro.</div>`; return; }
   const flag = (lbl,v) => `<span class="flag ${v?"sim":""}">${lbl}: ${sn(v)}</span>`;
@@ -216,7 +232,7 @@ function render(){
     ${r.contratado && r.contratado !== r.nome ? `<div class="campo"><b>Contratado</b>${esc(r.contratado)}</div>` : ""}
     <div class="campo"><b>Telefone</b>${r.tel ? `<a href="tel:${esc(String(r.tel).replace(/\D/g,""))}">${esc(r.tel)}</a>` : "—"}</div>
     <div class="campo"><b>Endereço</b>${esc(r.log)}${r.comp ? ", "+esc(r.comp) : ""}<br>${esc(r.bairro)} · ${esc(r.cidade)}/${esc(r.uf)} · CEP ${esc(r.cep)}
-      ${r.lat ? ` · <button class="linkbtn" data-i="${i}">ver no mapa</button>` : ""}</div>
+      ${r.lat && r.lat > -27.85 && r.lat < -27.37 && r.lng > -48.62 && r.lng < -48.33 ? ` · <button class="linkbtn" data-i="${i}">ver no mapa</button>` : ""}</div>
     <div class="campo"><b>Especialidades</b>${r.esp.length ? r.esp.map(s=>`<span class="tag">${esc(s)}</span>`).join("") : "—"}</div>
     <div class="flags">${flag("Urg/Emerg",r.urg)}${flag("Hora marcada",r.hora)}${flag("Pronto atend.",r.pa)}${flag("Internação",r.int)}${flag("Pediátrico",r.ped)}</div>
     ${r.cc.length ? `<div class="campo"><details><summary>Corpo clínico (${r.cc.length})</summary>${esc(r.cc.join("; "))}</details></div>` : ""}
@@ -241,7 +257,12 @@ function renderMapa(rows, foco){
   }
   setTimeout(() => mapa.invalidateSize(), 0);
   camada.clearLayers();
-  const comCoord = rows.filter(r => r.lat && r.lng);
+  // Só pontos dentro de Florianópolis (ignora coordenadas de outras cidades)
+  const emFloripa = r => r.lat > -27.85 && r.lat < -27.37 && r.lng > -48.62 && r.lng < -48.33;
+  const comCoord = rows.filter(r => r.lat && r.lng && emFloripa(r));
+  const fora = rows.length - comCoord.length;
+  $("mapaNota").hidden = !fora;
+  $("mapaNota").textContent = `${comCoord.length} no mapa · ${fora} sem localização válida em Florianópolis (ver na lista)`;
   // Agrupa endereços idênticos num só ponto
   const grupos = {};
   comCoord.forEach(r => (grupos[`${r.lat},${r.lng}`] ||= []).push(r));
@@ -262,8 +283,9 @@ function setModo(m, foco){
   render();
   if (m === "mapa") { renderMapa(filtrados(), foco); $("res").scrollIntoView({behavior:"smooth"}); }
 }
-$("vLista").onclick = () => setModo("lista");
-$("vMapa").onclick = () => setModo("mapa");
+$("vLista").onclick = () => { setModo("lista"); menu(false); };
+$("vMapa").onclick = () => { setModo("mapa"); menu(false); };
+$("ver").onclick = () => { menu(false); window.scrollTo({top:0}); };
 $("busca").oninput = render;
 $("btn").onclick = () => { document.body.classList.remove("menu"); consultar(true); };
 const menu = on => document.body.classList.toggle("menu", on);

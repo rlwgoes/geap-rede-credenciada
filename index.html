@@ -4,10 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rede Credenciada GEAP — Consulta</title>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <style>
   :root{--azul:#0b3a75;--azul2:#1f5fae;--fundo:#f4f6fa;--borda:#dde3ec;--txt:#1d2533;--mut:#5d6b80}
-  *{box-sizing:border-box}
+  *{box-sizing:border-box} [hidden]{display:none!important}
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--fundo);color:var(--txt)}
   header{background:linear-gradient(120deg,var(--azul),var(--azul2));color:#fff;padding:22px 20px}
   header h1{margin:0;font-size:1.35rem} header p{margin:4px 0 0;opacity:.85;font-size:.9rem}
@@ -16,14 +20,17 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
   label{font-size:.8rem;color:var(--mut);display:block;margin-bottom:4px}
   input{width:100%;padding:9px 10px;border:1px solid var(--borda);border-radius:8px;font-size:.95rem}
-  .tipos{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-  .tipos label{display:flex;align-items:center;gap:6px;background:var(--fundo);border:1px solid var(--borda);border-radius:999px;padding:6px 12px;color:var(--txt);font-size:.85rem;cursor:pointer;margin:0}
   .acoes{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
-  button{background:var(--azul);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:.95rem;cursor:pointer}
+  button{background:var(--azul);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:.95rem;cursor:pointer;font-family:inherit}
   button.sec{background:#fff;color:var(--azul);border:1px solid var(--azul)}
   button:disabled{opacity:.5;cursor:default}
   #status{font-size:.88rem;color:var(--mut)}
-  .abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .barra{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  #busca{flex:1;min-width:200px;max-width:380px}
+  .modo{display:inline-flex;border:1px solid var(--azul);border-radius:8px;overflow:hidden}
+  .modo button{border-radius:0;background:#fff;color:var(--azul);padding:8px 14px;font-size:.88rem}
+  .modo button.ativo{background:var(--azul);color:#fff}
+  .abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
   .aba{background:#fff;color:var(--txt);border:1px solid var(--borda);font-size:.85rem;padding:7px 12px}
   .aba.ativa{background:var(--azul);color:#fff;border-color:var(--azul)}
   .aba .n{opacity:.7;margin-left:4px}
@@ -38,15 +45,20 @@
   .flag.sim{background:#e3eefc;color:var(--azul)}
   .tag{display:inline-block;font-size:.72rem;padding:2px 7px;border-radius:999px;background:#e5f3ea;color:#1c6b3a;margin:2px 3px 2px 0}
   details summary{cursor:pointer;color:var(--azul2)}
+  .linkbtn{background:none;border:0;padding:0;color:var(--azul2);text-decoration:underline;font-size:inherit;cursor:pointer}
   .vazio{padding:30px;text-align:center;color:var(--mut)}
-  #busca{max-width:320px}
+  #mapa{height:72vh;min-height:420px;border-radius:10px;border:1px solid var(--borda)}
+  .leaflet-popup-content{font-size:.82rem;line-height:1.4;max-width:260px}
+  .leaflet-popup-content h4{margin:0 0 4px;color:var(--azul);font-size:.9rem}
+  .esqueleto{height:150px;border-radius:10px;background:linear-gradient(90deg,#eef2f8 25%,#f7f9fc 50%,#eef2f8 75%);background-size:200% 100%;animation:sk 1.2s infinite}
+  @keyframes sk{to{background-position:-200% 0}}
   footer{text-align:center;font-size:.78rem;color:var(--mut);padding:20px}
 </style>
 </head>
 <body>
 <header>
   <h1>Rede Credenciada GEAP</h1>
-  <p>Todos os estabelecimentos, sem paginação, separados por tipo. Exporta para Excel.</p>
+  <p>Todos os estabelecimentos, separados por tipo, em lista ou no mapa. Exporta para Excel.</p>
 </header>
 <main>
   <section class="card">
@@ -55,7 +67,6 @@
       <div><label for="cidade">Nº da cidade (NroCidade)</label><input id="cidade" type="number" value="7438"></div>
       <div><label for="plano">Nº do plano (NroPlano)</label><input id="plano" type="number" value="15"></div>
     </div>
-    <div class="tipos" id="tipos"></div>
     <div class="acoes">
       <button id="btn">Consultar</button>
       <button id="xlsx" class="sec" disabled>Baixar Excel</button>
@@ -63,15 +74,17 @@
     </div>
   </section>
 
-  <section class="card" id="res" hidden>
-    <div class="acoes" style="margin-top:0;margin-bottom:10px">
-      <input id="busca" placeholder="Filtrar por nome, bairro, especialidade…">
+  <section class="card" id="res">
+    <div class="barra">
+      <input id="busca" placeholder="Filtrar por nome, bairro, especialidade, médico…">
+      <div class="modo"><button id="vLista" class="ativo">Lista</button><button id="vMapa">Mapa</button></div>
     </div>
     <div class="abas" id="abas"></div>
-    <div class="lista" id="tabela"></div>
+    <div class="lista" id="lista"></div>
+    <div id="mapa" hidden></div>
   </section>
 </main>
-<footer>Dados da API pública apicore.geap.com.br. Página não oficial.</footer>
+<footer>Dados da API pública apicore.geap.com.br · Mapa © colaboradores do OpenStreetMap · Página não oficial.</footer>
 
 <script>
 const TIPOS = {
@@ -80,101 +93,152 @@ const TIPOS = {
   6:"Maternidade", 7:"Telemedicina", 8:"Tipo 8"
 };
 const $ = id => document.getElementById(id);
-let dados = {}, abaAtiva = null;
-
-$("tipos").innerHTML = Object.entries(TIPOS).map(([n,t]) =>
-  `<label><input type="checkbox" value="${n}" checked> ${n}. ${t}</label>`).join("");
-
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const sn = b => b ? "Sim" : "Não";
+let dados = null, abaAtiva = 1, modo = "lista", mapa = null, camada = null;
 
-async function pagina(tipo, page, p) {
-  const qs = new URLSearchParams({tipo, page, size:p.size, uf:p.uf, cidade:p.cidade, plano:p.plano});
-  const r = await fetch(`/api/geap?${qs}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const j = await r.json();
-  return j.resultData || {totalRecords:0,totalPages:0,items:[]};
+// Cache local: abre na hora em visitas seguintes (válido por 12h)
+const CACHE_H = 12;
+const chave = p => `geap:${p.uf}:${p.cidade}:${p.plano}`;
+function lerCache(p){ try{ const c=JSON.parse(localStorage.getItem(chave(p))); if(c && Date.now()-c.t < CACHE_H*3600e3) return c.d; }catch(e){} return null; }
+function gravarCache(p,d){ try{ localStorage.setItem(chave(p), JSON.stringify({t:Date.now(),d})); }catch(e){} }
+
+function esqueleto(){
+  $("lista").innerHTML = Array(6).fill('<div class="esqueleto"></div>').join("");
 }
 
-function linha(i) {
-  const e = i.endereco || {}, p = i.propriedades || {};
-  const cc = (i.corpoClinico || []).map(c => (c.nmeCorpoClinico||"").trim());
-  return {
-    "Nome fantasia": (i.nmeFantasia||"").trim(), "Contratado": i.nmeContratado,
-    "Nº contratado": i.nroContratado, "CPF/CNPJ": i.nroCPFCNPJ,
-    "Classe": (i.desClasse||"").replace(/\s+/g," "), "Telefone": i.telefone,
-    "Logradouro": (e.logradouro||"").trim(), "Complemento": e.complemento, "Bairro": e.bairro,
-    "Cidade": e.nmeCidade, "UF": e.sglEstado, "CEP": String(e.nroCep||"").padStart(8,"0"),
-    "Latitude": e.nroLatitude, "Longitude": e.nroLongitude,
-    "Especialidades": (i.especialidades||[]).map(x=>x.esp).join("; "),
-    "Urgência/Emergência": sn(p.urgEmerg), "Hora marcada": sn(p.horaMarcada),
-    "Pronto atendimento": sn(p.prontoAtendimento), "Internação": sn(p.paInternado),
-    "Atend. pediátrico": sn(p.staAtendimentoPediatrico),
-    "Qtd. corpo clínico": cc.length, "Corpo clínico": cc.join("; ")
-  };
-}
-
-$("btn").onclick = async () => {
-  const p = {uf:$("uf").value.trim().toUpperCase(), cidade:$("cidade").value, plano:$("plano").value,
-             size:100};
-  const tipos = [...document.querySelectorAll("#tipos input:checked")].map(x => +x.value);
-  if (!tipos.length) { $("status").textContent = "Selecione ao menos um tipo."; return; }
-  $("btn").disabled = $("xlsx").disabled = true; dados = {};
+async function consultar(forcar){
+  const p = {uf:$("uf").value.trim().toUpperCase(), cidade:$("cidade").value.trim(), plano:$("plano").value.trim()};
+  const c = !forcar && lerCache(p);
+  if (c) { usar(c); return; }
+  $("btn").disabled = $("xlsx").disabled = true;
+  $("status").textContent = "Consultando todos os tipos…";
+  if (!dados) esqueleto();
   try {
-    for (const t of tipos) {
-      $("status").textContent = `Consultando ${TIPOS[t]}…`;
-      const first = await pagina(t, 1, p);
-      let items = first.items || [];
-      for (let pg = 2; pg <= (first.totalPages || 1); pg++) {
-        items = items.concat((await pagina(t, pg, p)).items || []);
-      }
-      dados[t] = {total:first.totalRecords || 0, linhas: items.map(linha)};
-    }
-    const tot = Object.values(dados).reduce((a,d)=>a+d.linhas.length,0);
-    $("status").textContent = `${tot} estabelecimentos encontrados.`;
-    $("xlsx").disabled = false; $("res").hidden = false;
-    abaAtiva = tipos[0]; render();
+    const r = await fetch(`/api/rede?${new URLSearchParams(p)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    gravarCache(p, d); usar(d);
   } catch (e) {
     $("status").textContent = "Erro na consulta: " + e.message;
+    $("lista").innerHTML = "";
   } finally { $("btn").disabled = false; }
-};
-
-function render() {
-  $("abas").innerHTML = Object.keys(dados).map(t =>
-    `<button class="aba ${+t===abaAtiva?"ativa":""}" data-t="${t}">${esc(TIPOS[t])}<span class="n">(${dados[t].linhas.length})</span></button>`).join("");
-  document.querySelectorAll(".aba").forEach(b => b.onclick = () => { abaAtiva = +b.dataset.t; render(); });
-  const f = $("busca").value.trim().toLowerCase();
-  const rows = (dados[abaAtiva]?.linhas || []).filter(r => !f ||
-    [r["Nome fantasia"],r["Contratado"],r["Bairro"],r["Especialidades"],r["Corpo clínico"]].join(" ").toLowerCase().includes(f));
-  if (!rows.length) { $("tabela").innerHTML = `<div class="vazio">Nenhum registro.</div>`; return; }
-  const flag = (lbl,v) => `<span class="flag ${v==="Sim"?"sim":""}">${lbl}: ${v}</span>`;
-  $("tabela").innerHTML = rows.map(r => `<article class="item">
-    <h3>${esc(r["Nome fantasia"])}</h3>
-    <div class="sub">${esc(r["Classe"])} · CNPJ/CPF ${esc(r["CPF/CNPJ"])} · Nº ${esc(r["Nº contratado"])}</div>
-    ${r["Contratado"] && r["Contratado"].trim()!==r["Nome fantasia"] ? `<div class="campo"><b>Contratado</b>${esc(r["Contratado"])}</div>` : ""}
-    <div class="campo"><b>Telefone</b>${r["Telefone"] ? `<a href="tel:${esc(String(r["Telefone"]).replace(/\D/g,""))}">${esc(r["Telefone"])}</a>` : "—"}</div>
-    <div class="campo"><b>Endereço</b>${esc(r["Logradouro"])}${r["Complemento"] ? ", "+esc(r["Complemento"]) : ""}<br>${esc(r["Bairro"])} · ${esc(r["Cidade"])}/${esc(r["UF"])} · CEP ${esc(r["CEP"])}
-      ${r.Latitude ? ` · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${r.Latitude},${r.Longitude}">ver no mapa</a>` : ""}</div>
-    <div class="campo"><b>Especialidades</b>${r["Especialidades"] ? r["Especialidades"].split("; ").map(s=>`<span class="tag">${esc(s)}</span>`).join("") : "—"}</div>
-    <div class="flags">${flag("Urg/Emerg",r["Urgência/Emergência"])}${flag("Hora marcada",r["Hora marcada"])}${flag("Pronto atend.",r["Pronto atendimento"])}${flag("Internação",r["Internação"])}${flag("Pediátrico",r["Atend. pediátrico"])}</div>
-    <div class="campo">${r["Qtd. corpo clínico"] ? `<details><summary>Corpo clínico (${r["Qtd. corpo clínico"]})</summary>${esc(r["Corpo clínico"])}</details>` : ""}</div>
-  </article>`).join("");
 }
-$("busca").oninput = render;
-window.addEventListener("load", () => $("btn").click());
 
-$("xlsx").onclick = () => {
+function usar(d){
+  dados = {}; d.tipos.forEach(t => dados[t.tipo] = t);
+  const tot = d.tipos.reduce((a,t)=>a+t.itens.length,0);
+  const quando = new Date(d.consultadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"});
+  $("status").textContent = `${tot} estabelecimentos · dados de ${quando}`;
+  $("xlsx").disabled = false;
+  if (!dados[abaAtiva] || !dados[abaAtiva].itens.length) abaAtiva = (d.tipos.find(t=>t.itens.length)||{tipo:1}).tipo;
+  render();
+}
+
+function filtrados(){
+  const f = $("busca").value.trim().toLowerCase();
+  const itens = dados?.[abaAtiva]?.itens || [];
+  if (!f) return itens;
+  return itens.filter(r => [r.nome,r.contratado,r.bairro,r.log,r.esp.join(" "),r.cc.join(" ")].join(" ").toLowerCase().includes(f));
+}
+
+function render(){
+  if (!dados) return;
+  $("abas").innerHTML = Object.keys(TIPOS).map(t =>
+    `<button class="aba ${+t===abaAtiva?"ativa":""}" data-t="${t}">${esc(TIPOS[t])}<span class="n">(${dados[t]?.itens.length ?? 0})</span></button>`).join("");
+  document.querySelectorAll(".aba").forEach(b => b.onclick = () => { abaAtiva = +b.dataset.t; render(); });
+  const rows = filtrados();
+  $("lista").hidden = modo !== "lista"; $("mapa").hidden = modo !== "mapa";
+  if (modo === "mapa") return renderMapa(rows);
+  if (!rows.length) { $("lista").innerHTML = `<div class="vazio">Nenhum registro.</div>`; return; }
+  const flag = (lbl,v) => `<span class="flag ${v?"sim":""}">${lbl}: ${sn(v)}</span>`;
+  $("lista").innerHTML = rows.map((r,i) => `<article class="item">
+    <h3>${esc(r.nome)}</h3>
+    <div class="sub">${esc(r.classe)} · CNPJ/CPF ${esc(r.doc)} · Nº ${esc(r.nro)}</div>
+    ${r.contratado && r.contratado !== r.nome ? `<div class="campo"><b>Contratado</b>${esc(r.contratado)}</div>` : ""}
+    <div class="campo"><b>Telefone</b>${r.tel ? `<a href="tel:${esc(String(r.tel).replace(/\D/g,""))}">${esc(r.tel)}</a>` : "—"}</div>
+    <div class="campo"><b>Endereço</b>${esc(r.log)}${r.comp ? ", "+esc(r.comp) : ""}<br>${esc(r.bairro)} · ${esc(r.cidade)}/${esc(r.uf)} · CEP ${esc(r.cep)}
+      ${r.lat ? ` · <button class="linkbtn" data-i="${i}">ver no mapa</button>` : ""}</div>
+    <div class="campo"><b>Especialidades</b>${r.esp.length ? r.esp.map(s=>`<span class="tag">${esc(s)}</span>`).join("") : "—"}</div>
+    <div class="flags">${flag("Urg/Emerg",r.urg)}${flag("Hora marcada",r.hora)}${flag("Pronto atend.",r.pa)}${flag("Internação",r.int)}${flag("Pediátrico",r.ped)}</div>
+    ${r.cc.length ? `<div class="campo"><details><summary>Corpo clínico (${r.cc.length})</summary>${esc(r.cc.join("; "))}</details></div>` : ""}
+  </article>`).join("");
+  document.querySelectorAll(".linkbtn").forEach(b => b.onclick = () => { setModo("mapa", rows[+b.dataset.i]); });
+}
+
+function popup(r){
+  return `<h4>${esc(r.nome)}</h4>${esc(r.classe)}<br>${esc(r.log)}${r.comp?", "+esc(r.comp):""} · ${esc(r.bairro)}<br>
+    ${r.tel ? `<a href="tel:${esc(String(r.tel).replace(/\D/g,""))}">${esc(r.tel)}</a><br>` : ""}
+    ${r.esp.length ? `<small>${esc(r.esp.slice(0,6).join(", "))}${r.esp.length>6?` +${r.esp.length-6}`:""}</small><br>` : ""}
+    <a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}">Como chegar</a>`;
+}
+
+function renderMapa(rows, foco){
+  if (!mapa) {
+    mapa = L.map("mapa");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(mapa);
+    camada = (L.markerClusterGroup ? L.markerClusterGroup({maxClusterRadius:45, showCoverageOnHover:false}) : L.featureGroup()).addTo(mapa);
+  }
+  setTimeout(() => mapa.invalidateSize(), 0);
+  camada.clearLayers();
+  const comCoord = rows.filter(r => r.lat && r.lng);
+  // Agrupa endereços idênticos num só ponto
+  const grupos = {};
+  comCoord.forEach(r => (grupos[`${r.lat},${r.lng}`] ||= []).push(r));
+  let alvo = null;
+  Object.values(grupos).forEach(g => {
+    const m = L.marker([g[0].lat, g[0].lng]).bindPopup(g.map(popup).join("<hr>"), {maxHeight:300, autoPanPadding:[50,50]});
+    camada.addLayer(m);
+    if (foco && g.includes(foco)) alvo = m;
+  });
+  if (alvo) { camada.zoomToShowLayer ? camada.zoomToShowLayer(alvo, () => alvo.openPopup()) : (mapa.setView(alvo.getLatLng(), 17), alvo.openPopup()); }
+  else if (comCoord.length) mapa.fitBounds(camada.getBounds(), {padding:[30,30], maxZoom:16});
+  else mapa.setView([-27.59,-48.55], 12);
+}
+
+function setModo(m, foco){
+  modo = m;
+  $("vLista").classList.toggle("ativo", m==="lista"); $("vMapa").classList.toggle("ativo", m==="mapa");
+  render();
+  if (m === "mapa") { renderMapa(filtrados(), foco); $("res").scrollIntoView({behavior:"smooth"}); }
+}
+$("vLista").onclick = () => setModo("lista");
+$("vMapa").onclick = () => setModo("mapa");
+$("busca").oninput = render;
+$("btn").onclick = () => consultar(true);
+
+let xlsxPronto = null;
+function carregarXLSX(){
+  return xlsxPronto ||= new Promise((ok, erro) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+    s.onload = ok; s.onerror = erro; document.head.appendChild(s);
+  });
+}
+$("xlsx").onclick = async () => {
+  await carregarXLSX();
   const wb = XLSX.utils.book_new();
-  const resumo = Object.entries(dados).map(([t,d]) => ({"Tipo":+t,"Estabelecimento":TIPOS[t],"Total API":d.total,"Registros":d.linhas.length}));
+  const resumo = Object.values(dados).map(d => ({"Tipo":d.tipo,"Estabelecimento":TIPOS[d.tipo],"Total API":d.total,"Registros":d.itens.length}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumo), "Resumo");
-  for (const [t,d] of Object.entries(dados)) {
-    const nome = TIPOS[t].replace(/[\\\/\?\*\[\]:]/g,"-").slice(0,31);
-    const ws = d.linhas.length ? XLSX.utils.json_to_sheet(d.linhas.map(r => ({...r, "Corpo clínico": r["Corpo clínico"].slice(0,32000)})))
-                               : XLSX.utils.aoa_to_sheet([["Nenhum registro encontrado"]]);
+  for (const d of Object.values(dados)) {
+    const nome = TIPOS[d.tipo].replace(/[\\\/\?\*\[\]:]/g,"-").slice(0,31);
+    const linhas = d.itens.map(r => ({
+      "Nome fantasia":r.nome, "Contratado":r.contratado, "Nº contratado":r.nro, "CPF/CNPJ":r.doc, "Classe":r.classe,
+      "Telefone":r.tel, "Logradouro":r.log, "Complemento":r.comp, "Bairro":r.bairro, "Cidade":r.cidade, "UF":r.uf, "CEP":r.cep,
+      "Latitude":r.lat, "Longitude":r.lng, "Especialidades":r.esp.join("; "),
+      "Urgência/Emergência":sn(r.urg), "Hora marcada":sn(r.hora), "Pronto atendimento":sn(r.pa),
+      "Internação":sn(r.int), "Atend. pediátrico":sn(r.ped),
+      "Qtd. corpo clínico":r.cc.length, "Corpo clínico":r.cc.join("; ").slice(0,32000)
+    }));
+    const ws = linhas.length ? XLSX.utils.json_to_sheet(linhas) : XLSX.utils.aoa_to_sheet([["Nenhum registro encontrado"]]);
     XLSX.utils.book_append_sheet(wb, ws, nome);
   }
   XLSX.writeFile(wb, `GEAP_rede_${$("uf").value}_${$("cidade").value}_plano${$("plano").value}.xlsx`);
 };
+
+consultar(false);
 </script>
 </body>
 </html>

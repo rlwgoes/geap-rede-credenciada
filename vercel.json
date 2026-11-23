@@ -1,1 +1,7 @@
-{ "functions": { "api/geap.js": { "maxDuration": 30 } } }
+{
+  "regions": ["gru1"],
+  "functions": {
+    "api/geap.js": { "maxDuration": 30 },
+    "api/rede.js": { "maxDuration": 60 }
+  }
+}
